@@ -28,6 +28,7 @@ def get_smiles(broad_id_path, pubchem_dict, outfile):
             counter += 1
             if counter % 100 == 0:
                 sys.stderr.write("Completed %s records.\r"%(counter))
+                sys.stdout.flush()
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Process individuals with variants from a VCF.')
