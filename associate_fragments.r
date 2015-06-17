@@ -1,48 +1,47 @@
 options(stringsAsFactors=FALSE)
 require(rcdk)
 
-# minimum number of compounds in which a fragment must appear in order to be considered
-minimum_appearances = 2
-
-compounds = read.table('dos_with_smiles.txt',sep='\t',header=FALSE,comment.char='',quote='',na.string='')
-colnames(compounds) = c('broad_id', 'pubchem_id', 'smiles')
-
-# remove ones with no smiles
-compounds = compounds[!is.na(compounds$smiles),]
-
-obj = parse.smiles(compounds$smiles)
-mur = get.murcko.fragments(obj)
-tbl_frags = table(unlist(mur))
-use_frags = names(tbl_frags)[tbl_frags >= minimum_appearances]
-n_frags = length(use_frags)
-
-mat = matrix(nrow=dim(compounds)[1],ncol=n_frags)
-rownames(mat) = compounds$smiles
-colnames(mat) = use_frags
-
-for (i in 1:dim(compounds)[1]) {
-	mat[i,] = use_frags %in% unlist(mur[[i]])
+# Loads a data.frame with compound IDs and smiles, throws away any compounds without smiles
+# This is hard-coded for a particular input data format at present, will need to be
+# made more flexible in the future
+load_compounds = function(path) {
+  compounds = read.table(path,sep='\t',header=FALSE,comment.char='',quote='',na.string='')
+  colnames(compounds) = c('broad_id', 'pubchem_id', 'smiles')
+  # remove ones with no smiles
+  compounds = compounds[!is.na(compounds$smiles),]
+  return (compounds)
 }
 
-# make up a list of screening hits for an example
-hits = sample(1:dim(compounds)[1],size=300,replace=FALSE)
-
-# convert to logical array
-is_hit = 1:dim(compounds)[1] %in% hits
-
-association = data.frame(fragment=all_frags, n_compounds=integer(n_frags), n_hits=integer(n_frags), or=numeric(n_frags), p_val=numeric(n_frags))
-
-for (j in 1:n_frags) {
-	n_compounds = sum(mat[,j])
-	n_hits = sum(mat[,j] & is_hit)
-	ctable = table(data.frame(hit=is_hit, frag=as.logical(mat[,j])))
-	fisher_result = fisher.test(ctable,alternative='two.sided')
-	association$n_compounds[j] = n_compounds
-	association$n_hits[j] = n_hits
-	association$or[j] = fisher_result$estimate
-	association$p_val[j] = fisher_result$p.value
+# Create a matrix of compounds (rows) vs. fragments in them (columns)
+# smiles: vector of SMILES strings, cannot contain NA values
+# minimum_appearances: minimum number of compounds in which a fragment must appear in order to be considered
+# type: type of fragments to investigate. options are 'murcko' and 'exhaustive'
+# note that sometimes Java heap will run out of memory on the parse.smiles step
+# I don't yet have a solution for this other than re-starting R and trying again
+create_fragment_matrix = function(smiles, minimum_appearances=2, type='murcko') {
+  # check that inputs are valid
+  stopifnot(sum(is.na(smiles))==0)
+  stopifnot(type %in% c('murcko','exhaustive'))
+  # parse smiles to get a list of rcdk objects representing molecules
+  obj = parse.smiles(smiles)
+  # get a list of fragments in these objects
+  if (type == 'murcko') {
+    frag = get.murcko.fragments(obj)
+  } else if (type == 'exhaustive') {
+    frag = get.exhaustive.fragments(obj)
+  }
+  tbl_frags = table(unlist(frag))
+  use_frags = names(tbl_frags)[tbl_frags >= minimum_appearances]
+  n_frags = length(use_frags)
+  n_compounds = length(smiles)
+  mat = matrix(nrow=n_compounds, ncol=n_frags)
+  rownames(mat) = smiles
+  colnames(mat) = use_frags
+  for (i in 1:n_compounds) {
+    mat[i,] = use_frags %in% unlist(frag[[i]])
+  }
+  return (mat)
 }
-
 
 associate_fragments = function(mat, is_hit) {
   # initialize data frame of results to return
@@ -72,7 +71,7 @@ associate_fragments = function(mat, is_hit) {
 # to benchmark the whole function: require(rbenchmark); benchmark(associate_fragments(mat,is_hit),replications=1)
 # but unlike in Python, benchmark doesn't break it down by calls; you have to wrap each line in benchmark separately
 
-bootstrap = function(mat, n_hits, n_iter, fdr=c(.10,.05,.01)) {
+empirical_fdr = function(mat, n_hits, n_iter, fdr=c(.10,.05,.01)) {
   p_val_distributions = {}
   for (iter in 1:n_iter) {
     hits = sample(1:dim(mat)[1],size=n_hits,replace=FALSE)
@@ -80,11 +79,17 @@ bootstrap = function(mat, n_hits, n_iter, fdr=c(.10,.05,.01)) {
     associations = associate_fragments(mat, is_hit)
     p_val_distributions[[iter]] = associations$p_val
   }
-  fdr_cutoffs = quantile(unlist(p_val_distributions), fdr)
+  fdr_cutoffs_all = quantile(unlist(p_val_distributions), fdr)
+  fdr_cutoffs_min = quantile(mapply(min,p_val_distributions), fdr)
   return_value = {}
-  return_value[['fdr_cutoffs']] = fdr_cutoffs
+  return_value[['fdr_cutoffs_all']] = fdr_cutoffs_all
+  return_value[['fdr_cutoffs_min']] = fdr_cutoffs_min
   return_value[['p_val_distributions']] = p_val_distributions
   return (return_value)
 }
 
+p_val_distributions= {}
+for (i in 1:100) {
+  p_val_distributions[[i]] = runif(n=100)
+}
 
