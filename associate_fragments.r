@@ -88,8 +88,32 @@ empirical_fdr = function(mat, n_hits, n_iter, fdr=c(.10,.05,.01)) {
   return (return_value)
 }
 
-p_val_distributions= {}
-for (i in 1:100) {
-  p_val_distributions[[i]] = runif(n=100)
+
+# Create an image of a fragment and the top 5 compounds that are hits that contain this fragment
+plot_lead = function(mat, is_hit, frag, max_hits=5, dest=NULL, width=1000, height=1000) {
+  hits_in_class = head(rownames(mat)[is_hit & mat[,frag]], n = max_hits)
+  if (!is.null(dest)) { # otherwise just plot to current graphics device
+    pdf(dest, width=9, height=6)
+  }
+  par(mfrow=c(2,3), mar=c(2,2,2,2), oma=c(1,1,3,1))
+  n_compounds = sum(mat[,frag])
+  n_hits = sum(is_hit & mat[,frag])
+  summary_text = paste('Fragment found in ',n_compounds,' compounds, ',n_hits,' of which are hits',sep='')
+  temp = view.image.2d(parse.smiles(frag)[[1]],width,height) # get Java representation into an image matrix. set number of pixels you want horiz and vertical
+  plot(NA,NA,xlim=c(1,10),ylim=c(1,10),xaxt='n',yaxt='n',xlab='',ylab='') # create an empty plot
+  rasterImage(temp,1,1,10,10) # boundaries of raster: xmin, ymin, xmax, ymax. here i set them equal to plot boundaries
+  mtext(side=3, text='lead fragment', font=2)
+  mtext(side=1, text=frag, cex=.5)
+  for (hit in hits_in_class) {
+    temp = view.image.2d(parse.smiles(hit)[[1]],width,height) # get Java representation into an image matrix. set number of pixels you want horiz and vertical
+    plot(NA,NA,xlim=c(1,10),ylim=c(1,10),xaxt='n',yaxt='n',xlab='',ylab='') # create an empty plot
+    rasterImage(temp,1,1,10,10) # boundaries of raster: xmin, ymin, xmax, ymax. here i set them equal to plot boundaries
+    mtext(side=1, text=hit, cex=.5)
+  }
+  mtext(side=3, oma=T, text=summary_text)
+  if (!is.null(dest)) { # otherwise just plot to current graphics device
+    dev.off()
+  }  
 }
+
 
