@@ -110,10 +110,9 @@ plot_lead = function(mat, is_hit, frag, max_hits=5, dest=NULL, width=1000, heigh
     rasterImage(temp,1,1,10,10) # boundaries of raster: xmin, ymin, xmax, ymax. here i set them equal to plot boundaries
     mtext(side=1, text=hit, cex=.5)
   }
-  mtext(side=3, oma=T, text=summary_text)
+  mtext(side=3, outer=T, text=summary_text)
   if (!is.null(dest)) { # otherwise just plot to current graphics device
     dev.off()
   }  
 }
-
 
